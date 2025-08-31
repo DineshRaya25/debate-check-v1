@@ -6,7 +6,7 @@ from openai import OpenAI
 # Load Secrets from Streamlit Cloud
 # ==============================
 OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
-GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
+#GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
 GOOGLE_CSE_ID = st.secrets["GOOGLE_CSE_ID"]
 WOLFRAM_APP_ID = st.secrets["WOLFRAM_APP_ID"]
 OPENWEATHER_API_KEY = st.secrets["OPENWEATHER_API_KEY"]
