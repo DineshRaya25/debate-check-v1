@@ -1,30 +1,28 @@
 import streamlit as st
 import requests
-import os
 from openai import OpenAI
 
 # ==============================
-# Load Secrets
+# Load Secrets from Streamlit Cloud
 # ==============================
-OPENROUTER_API_KEY = st.secrets.get("OPENROUTER_API_KEY", None)
-GOOGLE_API_KEY = st.secrets.get("GOOGLE_API_KEY", None)
-GOOGLE_CSE_ID = st.secrets.get("GOOGLE_CSE_ID", None)
-WOLFRAM_APP_ID = st.secrets.get("WOLFRAM_APP_ID", None)
-OPENWEATHER_API_KEY = st.secrets.get("OPENWEATHER_API_KEY", None)
-NEWS_API_KEY = st.secrets.get("NEWS_API_KEY", None)
+OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
+GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
+GOOGLE_CSE_ID = st.secrets["GOOGLE_CSE_ID"]
+WOLFRAM_APP_ID = st.secrets["WOLFRAM_APP_ID"]
+OPENWEATHER_API_KEY = st.secrets["OPENWEATHER_API_KEY"]
+NEWS_API_KEY = st.secrets["NEWS_API_KEY"]
 
 # ==============================
 # Helper Functions
 # ==============================
 
 def ask_openrouter(user_input):
-    if not OPENROUTER_API_KEY:
-        return "❌ Missing API key: OPENROUTER_API_KEY"
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=OPENROUTER_API_KEY,
-    )
+    """Query OpenRouter LLM"""
     try:
+        client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=OPENROUTER_API_KEY,
+        )
         response = client.chat.completions.create(
             model="google/gemini-2.5-flash-image-preview:free",
             messages=[{"role": "user", "content": user_input}]
@@ -35,25 +33,20 @@ def ask_openrouter(user_input):
 
 
 def google_search(query):
-    if not GOOGLE_API_KEY or not GOOGLE_CSE_ID:
-        return ["❌ Missing GOOGLE_API_KEY or GOOGLE_CSE_ID"]
-
+    """Perform Google Custom Search"""
     url = f"https://www.googleapis.com/customsearch/v1?q={query}&key={GOOGLE_API_KEY}&cx={GOOGLE_CSE_ID}"
     try:
         response = requests.get(url).json()
         if "error" in response:
             return [f"❌ Google API error: {response['error']['message']}"]
         items = response.get("items", [])
-        results = [f"{i['title']} - {i['link']}" for i in items]
-        return results if results else ["❌ No search results"]
+        return [f"{i['title']} - {i['link']}" for i in items] if items else ["❌ No search results"]
     except Exception as e:
         return [f"❌ Google Search error: {e}"]
 
 
 def ask_wolfram(query):
-    if not WOLFRAM_APP_ID:
-        return "❌ Missing API key: WOLFRAM_APP_ID"
-
+    """Query Wolfram Alpha"""
     url = f"http://api.wolframalpha.com/v2/query?appid={WOLFRAM_APP_ID}&input={query}&output=json"
     try:
         response = requests.get(url).json()
@@ -69,8 +62,7 @@ def ask_wolfram(query):
 
 
 def get_weather(city):
-    if not OPENWEATHER_API_KEY:
-        return "❌ Missing API key: OPENWEATHER_API_KEY"
+    """Fetch weather info from OpenWeather"""
     url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={OPENWEATHER_API_KEY}&units=metric"
     try:
         response = requests.get(url).json()
@@ -84,8 +76,7 @@ def get_weather(city):
 
 
 def get_news():
-    if not NEWS_API_KEY:
-        return ["❌ Missing API key: NEWS_API_KEY"]
+    """Fetch top headlines from NewsAPI"""
     url = f"https://newsapi.org/v2/top-headlines?country=us&apiKey={NEWS_API_KEY}"
     try:
         response = requests.get(url).json()
@@ -118,7 +109,6 @@ if st.button("Submit") and user_input:
 
     # External Sources
     st.subheader("📡 External Sources Used")
-
     st.write("**Wolfram:**", wolfram_result)
     st.write("**Weather:**", weather_result)
     st.write("**News:**", news_result[:5])
