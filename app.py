@@ -1,97 +1,125 @@
 import streamlit as st
 import requests
-import json
+import os
 from openai import OpenAI
 
-# Load API keys from Streamlit secrets
-OPENROUTER_API_KEY = st.secrets["api_keys"]["OPENROUTER_API_KEY"]
-WOLFRAM_APP_ID = st.secrets["api_keys"]["WOLFRAM_APP_ID"]
-OPENWEATHER_API_KEY = st.secrets["api_keys"]["OPENWEATHER_API_KEY"]
-NEWS_API_KEY = st.secrets["api_keys"]["NEWS_API_KEY"]
-GOOGLE_CSE_API_KEY = st.secrets["api_keys"]["GOOGLE_CSE_API_KEY"]
-GOOGLE_CSE_ID = st.secrets["api_keys"]["GOOGLE_CSE_ID"]
+# ==============================
+# Load Secrets
+# ==============================
+OPENROUTER_API_KEY = st.secrets.get("OPENROUTER_API_KEY", None)
+GOOGLE_API_KEY = st.secrets.get("GOOGLE_API_KEY", None)
+GOOGLE_CSE_ID = st.secrets.get("GOOGLE_CSE_ID", None)
+WOLFRAM_APP_ID = st.secrets.get("WOLFRAM_APP_ID", None)
+OPENWEATHER_API_KEY = st.secrets.get("OPENWEATHER_API_KEY", None)
+NEWS_API_KEY = st.secrets.get("NEWS_API_KEY", None)
 
-# Initialize OpenRouter client
-client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=OPENROUTER_API_KEY,
-)
+# ==============================
+# Helper Functions
+# ==============================
 
-# -------- Helper Functions --------
-
-def query_openrouter(prompt, model="google/gemini-2.5-flash-image-preview:free"):
+def ask_openrouter(user_input):
+    if not OPENROUTER_API_KEY:
+        return "❌ Missing API key: OPENROUTER_API_KEY"
+    client = OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=OPENROUTER_API_KEY,
+    )
     try:
         response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}]
+            model="google/gemini-2.5-flash-image-preview:free",
+            messages=[{"role": "user", "content": user_input}]
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"❌ Error with OpenRouter: {str(e)}"
+        return f"❌ OpenRouter error: {e}"
 
-def query_wolfram(query):
-    url = f"http://api.wolframalpha.com/v1/result?i={query}&appid={WOLFRAM_APP_ID}"
-    r = requests.get(url)
-    return r.text if r.status_code == 200 else "❌ Wolfram could not compute"
 
-def query_weather(city):
+def google_search(query):
+    if not GOOGLE_API_KEY or not GOOGLE_CSE_ID:
+        return ["❌ Missing GOOGLE_API_KEY or GOOGLE_CSE_ID"]
+
+    url = f"https://www.googleapis.com/customsearch/v1?q={query}&key={GOOGLE_API_KEY}&cx={GOOGLE_CSE_ID}"
+    try:
+        response = requests.get(url).json()
+        if "error" in response:
+            return [f"❌ Google API error: {response['error']['message']}"]
+        items = response.get("items", [])
+        results = [f"{i['title']} - {i['link']}" for i in items]
+        return results if results else ["❌ No search results"]
+    except Exception as e:
+        return [f"❌ Google Search error: {e}"]
+
+
+def ask_wolfram(query):
+    if not WOLFRAM_APP_ID:
+        return "❌ Missing API key: WOLFRAM_APP_ID"
+
+    url = f"http://api.wolframalpha.com/v2/query?appid={WOLFRAM_APP_ID}&input={query}&output=json"
+    try:
+        response = requests.get(url).json()
+        if not response["queryresult"]["success"]:
+            return "❌ Wolfram could not compute"
+        pods = response["queryresult"]["pods"]
+        for pod in pods:
+            if pod["title"].lower() in ["result", "exact result", "decimal approximation"]:
+                return pod["subpods"][0]["plaintext"]
+        return pods[0]["subpods"][0]["plaintext"] if pods else "❌ No result found"
+    except Exception as e:
+        return f"❌ Wolfram error: {e}"
+
+
+def get_weather(city):
+    if not OPENWEATHER_API_KEY:
+        return "❌ Missing API key: OPENWEATHER_API_KEY"
     url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={OPENWEATHER_API_KEY}&units=metric"
-    r = requests.get(url).json()
-    if "main" in r:
-        return f"{city}: {r['main']['temp']}°C, {r['weather'][0]['description']}"
-    return "❌ City not found"
+    try:
+        response = requests.get(url).json()
+        if response.get("cod") != 200:
+            return f"❌ Weather error: {response.get('message','City not found')}"
+        temp = response["main"]["temp"]
+        desc = response["weather"][0]["description"]
+        return f"{city}: {temp}°C, {desc}"
+    except Exception as e:
+        return f"❌ Weather error: {e}"
 
-def query_news():
+
+def get_news():
+    if not NEWS_API_KEY:
+        return ["❌ Missing API key: NEWS_API_KEY"]
     url = f"https://newsapi.org/v2/top-headlines?country=us&apiKey={NEWS_API_KEY}"
-    r = requests.get(url).json()
-    if "articles" in r:
-        return [article["title"] for article in r["articles"][:5]]
-    return ["❌ No news available"]
+    try:
+        response = requests.get(url).json()
+        if response.get("status") != "ok":
+            return [f"❌ News API error: {response.get('message','Unknown error')}"]
+        return [f"{a['title']} - {a['source']['name']}" for a in response.get("articles", [])]
+    except Exception as e:
+        return [f"❌ News API error: {e}"]
 
-def query_google_cse(query):
-    url = f"https://www.googleapis.com/customsearch/v1?q={query}&key={GOOGLE_CSE_API_KEY}&cx={GOOGLE_CSE_ID}"
-    r = requests.get(url).json()
-    if "items" in r:
-        return [item["title"] + " - " + item["link"] for item in r["items"][:5]]
-    return ["❌ No search results"]
+# ==============================
+# Streamlit UI
+# ==============================
 
-# -------- Streamlit App --------
+st.set_page_config(page_title="AI Assistant V1", page_icon="🤖", layout="centered")
+st.title("🤖 Ask me anything!")
 
-st.title("🤖 LLM + External APIs Assistant (v1)")
-st.write("This assistant uses LLMs for reasoning and external APIs for fact-checking.")
+user_input = st.text_area("Ask me anything:", height=100)
 
-user_input = st.text_area("💬 Ask me anything:")
+if st.button("Submit") and user_input:
+    with st.spinner("Thinking..."):
+        assistant_response = ask_openrouter(user_input)
+        wolfram_result = ask_wolfram(user_input)
+        weather_result = get_weather(user_input)
+        news_result = get_news()
+        google_results = google_search(user_input)
 
-if st.button("Submit"):
-    if user_input.strip() == "":
-        st.warning("Please enter a question!")
-    else:
-        with st.spinner("Thinking..."):
-            # Call APIs for facts
-            wolfram_result = query_wolfram(user_input)
-            weather_result = query_weather(user_input)
-            news_result = query_news()
-            google_results = query_google_cse(user_input)
+    # Display response
+    st.subheader("🤖 Assistant Response")
+    st.write(assistant_response)
 
-            # Feed external info into LLM
-            context = f"""
-            User Question: {user_input}
-            
-            External Facts:
-            - WolframAlpha: {wolfram_result}
-            - Weather API: {weather_result}
-            - NewsAPI: {news_result}
-            - Google CSE: {google_results}
-            """
+    # External Sources
+    st.subheader("📡 External Sources Used")
 
-            llm_response = query_openrouter(context)
-
-        # Display response
-        st.subheader("🤖 Assistant Response")
-        st.write(llm_response)
-
-        st.subheader("📡 External Sources Used")
-        st.write(f"**Wolfram:** {wolfram_result}")
-        st.write(f"**Weather:** {weather_result}")
-        st.write(f"**News:** {news_result}")
-        st.write(f"**Google Search:** {google_results}")
+    st.write("**Wolfram:**", wolfram_result)
+    st.write("**Weather:**", weather_result)
+    st.write("**News:**", news_result[:5])
+    st.write("**Google Search:**", google_results[:5])
