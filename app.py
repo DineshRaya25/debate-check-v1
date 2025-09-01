@@ -83,39 +83,47 @@ def ask_openrouter(system_prompt: str, user_prompt: str, model: str = "google/ge
     except Exception as e:
         return f"❌ OpenRouter error: {e}"
 
-def wolfram_compute(query: str) -> str:
-    """
-    More reliable JSON endpoint; returns the first "Result/Exact result/Decimal approximation" pod if available.
-    """
-    if not WOLFRAM_APP_ID:
-        return "⚠️ Skipped (missing WOLFRAM_APP_ID)"
+# Function: Query WolframAlpha
+def query_wolfram_alpha(query: str) -> str:
+    app_id = st.secrets["WOLFRAM_APP_ID"]  # ✅ from Streamlit secrets
     url = "http://api.wolframalpha.com/v2/query"
+
     params = {
-        "appid": WOLFRAM_APP_ID,
         "input": query,
-        "output": "json",
+        "format": "plaintext",
+        "output": "JSON",
+        "appid": app_id
     }
+
     try:
-        r = requests.get(url, params=params, timeout=20)
-        data = r.json()
-        if not data.get("queryresult", {}).get("success"):
-            return "ℹ️ Wolfram: no direct result"
-        pods = data["queryresult"].get("pods", [])
-        # prioritize result-like pods
-        for title in ("Result", "Exact result", "Decimal approximation"):
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        # ✅ Safely parse Wolfram response
+        if "queryresult" in data and data["queryresult"].get("success", False):
+            pods = data["queryresult"].get("pods", [])
+
+            # 1. Look for "Result" pod (usually main answer)
             for pod in pods:
-                if pod.get("title", "").lower() == title.lower():
-                    subs = pod.get("subpods", [])
-                    if subs and subs[0].get("plaintext"):
-                        return subs[0]["plaintext"]
-        # fallback to first pod plaintext
-        for pod in pods:
-            subs = pod.get("subpods", [])
-            if subs and subs[0].get("plaintext"):
-                return subs[0]["plaintext"]
-        return "ℹ️ Wolfram: no plaintext available"
+                if pod.get("title", "").lower() == "result":
+                    subpods = pod.get("subpods", [])
+                    if subpods and "plaintext" in subpods[0]:
+                        return subpods[0]["plaintext"]
+
+            # 2. If no "Result", take first pod with plaintext
+            for pod in pods:
+                subpods = pod.get("subpods", [])
+                if subpods and "plaintext" in subpods[0] and subpods[0]["plaintext"].strip():
+                    return subpods[0]["plaintext"]
+
+            return "No readable answer found from Wolfram Alpha."
+
+        else:
+            return "Wolfram Alpha could not compute an answer."
+
     except Exception as e:
-        return f"❌ Wolfram error: {e}"
+        return f"⚠️ Wolfram Alpha error: {str(e)}"
 
 def google_cse_search(query: str, num: int = 5) -> list[str]:
     if not GOOGLE_API_KEY or not GOOGLE_CSE_ID:
