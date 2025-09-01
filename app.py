@@ -83,47 +83,94 @@ def ask_openrouter(system_prompt: str, user_prompt: str, model: str = "google/ge
     except Exception as e:
         return f"❌ OpenRouter error: {e}"
 
-# Function: Query WolframAlpha
+# # Function: Query WolframAlpha
+# def query_wolfram_alpha(query: str) -> str:
+#     app_id = st.secrets["WOLFRAM_APP_ID"]  # ✅ from Streamlit secrets
+#     url = "http://api.wolframalpha.com/v2/query"
+
+#     params = {
+#         "input": query,
+#         "format": "plaintext",
+#         "output": "JSON",
+#         "appid": app_id
+#     }
+
+#     try:
+#         response = requests.get(url, params=params, timeout=10)
+#         response.raise_for_status()
+#         data = response.json()
+
+#         # ✅ Safely parse Wolfram response
+#         if "queryresult" in data and data["queryresult"].get("success", False):
+#             pods = data["queryresult"].get("pods", [])
+
+#             # 1. Look for "Result" pod (usually main answer)
+#             for pod in pods:
+#                 if pod.get("title", "").lower() == "result":
+#                     subpods = pod.get("subpods", [])
+#                     if subpods and "plaintext" in subpods[0]:
+#                         return subpods[0]["plaintext"]
+
+#             # 2. If no "Result", take first pod with plaintext
+#             for pod in pods:
+#                 subpods = pod.get("subpods", [])
+#                 if subpods and "plaintext" in subpods[0] and subpods[0]["plaintext"].strip():
+#                     return subpods[0]["plaintext"]
+
+#             return "No readable answer found from Wolfram Alpha."
+
+#         else:
+#             return "Wolfram Alpha could not compute an answer."
+
+#     except Exception as e:
+#         return f"⚠️ Wolfram Alpha error: {str(e)}"
+
+def clean_query(query: str) -> str:
+    # Remove filler words that confuse Wolfram Alpha
+    query = query.lower().strip()
+    query = re.sub(r"^(ok|hey|please)\s+", "", query)  # strip prefixes
+    return query
+
 def query_wolfram_alpha(query: str) -> str:
-    app_id = st.secrets["WOLFRAM_APP_ID"]  # ✅ from Streamlit secrets
+    app_id = st.secrets["WOLFRAM_APP_ID"]
     url = "http://api.wolframalpha.com/v2/query"
 
+    cleaned_query = clean_query(query)
+
     params = {
-        "input": query,
+        "input": cleaned_query,
         "format": "plaintext",
         "output": "JSON",
         "appid": app_id
     }
 
     try:
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(url, params=params, timeout=15)
         response.raise_for_status()
         data = response.json()
 
-        # ✅ Safely parse Wolfram response
+        # Debug: show raw Wolfram response in Streamlit expander
+        with st.expander("🔎 Wolfram Alpha Debug"):
+            st.json(data)
+
         if "queryresult" in data and data["queryresult"].get("success", False):
             pods = data["queryresult"].get("pods", [])
-
-            # 1. Look for "Result" pod (usually main answer)
             for pod in pods:
                 if pod.get("title", "").lower() == "result":
                     subpods = pod.get("subpods", [])
-                    if subpods and "plaintext" in subpods[0]:
+                    if subpods and subpods[0].get("plaintext"):
                         return subpods[0]["plaintext"]
-
-            # 2. If no "Result", take first pod with plaintext
             for pod in pods:
                 subpods = pod.get("subpods", [])
-                if subpods and "plaintext" in subpods[0] and subpods[0]["plaintext"].strip():
+                if subpods and subpods[0].get("plaintext"):
                     return subpods[0]["plaintext"]
-
             return "No readable answer found from Wolfram Alpha."
-
         else:
             return "Wolfram Alpha could not compute an answer."
 
     except Exception as e:
         return f"⚠️ Wolfram Alpha error: {str(e)}"
+
 
 def google_cse_search(query: str, num: int = 5) -> list[str]:
     if not GOOGLE_API_KEY or not GOOGLE_CSE_ID:
